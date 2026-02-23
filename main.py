@@ -8,6 +8,10 @@ pygame.init()
 screen = pygame.display.set_mode((800, 600))
 clock = pygame.time.Clock()
 
+game_state = "START"
+font = pygame.font.SysFont(None, 70)
+small_font = pygame.font.SysFont(None, 40)
+
 player = Player()
 pipes = [Pipe(800)]
 spawn_timer = 0
@@ -22,75 +26,118 @@ started = False
 prev_hand_open = False
 
 while running:
+    success, frame = cap.read()
+    if not success:
+        break
+
+    frame = cv2.flip(frame, 1)
+    frame, landmarks = tracker.process_frame(frame)
+
+    jump_detected = detector.is_hand_open(landmarks)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            running = False 
 
-    # === UPDATE ===
-    jump = False
-    success, frame = cap.read()
-    if success:
-        frame = cv2.flip(frame, 1)
-        _, landmarks = tracker.process_frame(frame)
-
-        if not started:
-            started = detector.is_fist(landmarks)
-        else:
-            hand_open = detector.is_hand_open(landmarks)
-            jump = hand_open and not prev_hand_open
-            prev_hand_open = hand_open
-
+    # START EKRANI
+    if game_state == "START":
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_rgb = cv2.resize(frame_rgb, screen.get_size())
-        camera_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-        screen.blit(camera_surface, (0, 0))
-    else:
-        screen.fill((30, 30, 30))
+        frame_rgb = cv2.resize(frame_rgb, (800, 600))
+        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        screen.blit(frame_surface, (0, 0))
+        
+        title = font.render("Görsel Kontrollü Zıplama Oyunu", True, (255, 255, 255))
+        info = small_font.render("Avuç aç: Zıpla | Avucunu açarak başla", True, (200, 200, 200))
 
-    if started:
-        player.update(jump)
-    else:
-        pygame.draw.rect(screen, (255, 255, 0), player.get_rect())
-        font = pygame.font.SysFont(None, 32)
-        text = font.render("Avuç kapat: Başla", True, (255, 255, 255))
-        screen.blit(text, (20, 20))
+        screen.blit(title, (200, 200))
+        screen.blit(info, (220, 300))
+        
+        if jump_detected:
+            game_state = "PLAYING"
+        
+        pygame.display.update()
+        clock.tick(60)
+        continue
+    # OYUN EKRANI
+    if game_state == "PLAYING":
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.resize(frame_rgb, (800, 600))
+        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        screen.blit(frame_surface, (0, 0))
 
-    spawn_timer += 1
-    if spawn_timer > 90:
-        pipes.append(Pipe(800))
-        spawn_timer = 0
+        score_bg = pygame.Surface((140, 40))
+        score_bg.set_alpha(150)
+        score_bg.fill((0, 0, 0))
+        screen.blit(score_bg, (5, 5))
 
-    for pipe in pipes:
-        pipe.update()
+        score_text = small_font.render(f"Skor: {score}", True, (255, 255, 255))
+        screen.blit(score_text, (15, 10))   
 
-    pipes = [p for p in pipes if not p.off_screen()]
+        if jump_detected and not prev_hand_open:    
+            player.jump()
+        prev_hand_open = jump_detected
 
-    # === DRAW PLAYER ===
-    pygame.draw.rect(screen, (255, 255, 0), player.get_rect())
+        player.update()
 
-    # === DRAW PIPES ===
-    for pipe in pipes:
-        top_rect, bottom_rect = pipe.get_rects(600)
-        pygame.draw.rect(screen, (0, 255, 0), top_rect)
-        pygame.draw.rect(screen, (0, 255, 0), bottom_rect)
+        spawn_timer += 1
+        if spawn_timer > 90:
+            pipes.append(Pipe(800))
+            spawn_timer = 0
+        
+        for pipe in pipes:
+            pipe.update()
+        pipes = [p for p in pipes if not p.off_screen()]    
 
-        # Collision
-        if pygame.Rect(player.get_rect()).colliderect(top_rect) or \
-           pygame.Rect(player.get_rect()).colliderect(bottom_rect):
-            running = False
+        pygame.draw.rect(screen, (255, 255, 0), player.get_rect())  
 
-    # Yere düşme kontrolü
-    if player.y + player.size >= 600:
-        running = False
+        for pipe in pipes:
+            top_rect, bottom_rect = pipe.get_rects(600)
+            pygame.draw.rect(screen, (0, 255, 0), top_rect)
+            pygame.draw.rect(screen, (0, 255, 0), bottom_rect)
 
-    # Ekranın üstüne çıkma kontrolü
-    if player.y <= 0:
-        running = False
+            if pygame.Rect(player.get_rect()).colliderect(top_rect) or \
+               pygame.Rect(player.get_rect()).colliderect(bottom_rect):
+                game_state = "GAME_OVER"
+            #skor kontrolü
+            if not pipe.passed and pipe.x + pipe.width < player.x:
+                pipe.passed = True
+                score += 1
 
-    pygame.display.update()
-    clock.tick(60)
+        # Alt ve üst kenarlara çarpma kontrolü
+        if player.y + player.size >= 600:
+            game_state = "GAME_OVER"
+        if player.y <= 0:
+            game_state = "GAME_OVER"
 
-pygame.quit()
+        pygame.display.update()
+        clock.tick(60)  
+        continue
+    # GAME OVER EKRANI
+    if game_state == "GAME_OVER":
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.resize(frame_rgb, (800, 600))           
+        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        screen.blit(frame_surface, (0, 0))
+        
+        game_over_text = font.render("Oyun Bitti!", True, (255, 0, 0))
+        restart_text = small_font.render("Avuç açarak tekrar başla", True, (255, 255, 255))
+        score_text = small_font.render(f"Skor: {score}", True, (255, 255, 255))
+
+        screen.blit(game_over_text, (220, 220))
+        screen.blit(score_text, (350, 300))
+        screen.blit(restart_text, (150, 320))
+
+        if jump_detected:
+            player = Player()
+            pipes = [Pipe(800)]
+            spawn_timer = 0
+            score = 0
+            game_state = "PLAYING"
+        
+        prev_hand_open = jump_detected
+        
+        pygame.display.update()
+        clock.tick(60)
+        continue
 cap.release()
-cv2.destroyAllWindows()
+pygame.quit()   

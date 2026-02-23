@@ -6,7 +6,7 @@ class Player:
         self.y = 250
         self.velocity = 0
         self.gravity = 0.5
-        self.jump_force = -6
+        self.jump_force = -8
         self.size = 30
 
     def update(self, jump=False):
@@ -28,6 +28,7 @@ class Pipe:
         self.gap = 150
         self.top_height = random.randint(50, 300)
         self.speed = 4
+        self.passed = False
 
     def update(self):
         self.x -= self.speed
