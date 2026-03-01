@@ -60,10 +60,7 @@ while running:
         continue
     # OYUN EKRANI
     if game_state == "PLAYING":
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_rgb = cv2.resize(frame_rgb, (800, 600))
-        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-        screen.blit(frame_surface, (0, 0))
+        screen.fill((30, 40, 60))
 
         score_bg = pygame.Surface((140, 40))
         score_bg.set_alpha(150)
@@ -88,25 +85,42 @@ while running:
             pipe.update()
         pipes = [p for p in pipes if not p.off_screen()]    
 
-        pygame.draw.rect(screen, (255, 255, 0), player.get_rect())  
+        player_rect = pygame.Rect(
+            player.x,
+            int(player.y),
+            player.image.get_width(),
+            player.image.get_height(),
+        )
+        #kuşun dönme efekti
+        bird_angle = max(-35, min(25, -player.velocity * 4))
+        rotated_bird = pygame.transform.rotate(player.image, bird_angle)
+        rotated_rect = rotated_bird.get_rect(center=player_rect.center)
+        screen.blit(rotated_bird, rotated_rect.topleft)
 
         for pipe in pipes:
             top_rect, bottom_rect = pipe.get_rects(600)
             pygame.draw.rect(screen, (0, 255, 0), top_rect)
             pygame.draw.rect(screen, (0, 255, 0), bottom_rect)
 
-            if pygame.Rect(player.get_rect()).colliderect(top_rect) or \
-               pygame.Rect(player.get_rect()).colliderect(bottom_rect):
+            if player_rect.colliderect(top_rect) or player_rect.colliderect(bottom_rect):
                 game_state = "GAME_OVER"
             #skor kontrolü
             if not pipe.passed and pipe.x + pipe.width < player.x:
                 pipe.passed = True
                 score += 1
 
+        # Kamera görüntüsünü küçültme ve sağ alt köşeye yerleştirme
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.resize(frame_rgb, (200, 150))
+        camera_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+
+        screen.blit(camera_surface, (800 - 210, 600 - 160))
+        pygame.draw.rect(screen, (255, 255, 255), (800 - 210, 600 - 160, 200, 150), 2)
+
         # Alt ve üst kenarlara çarpma kontrolü
-        if player.y + player.size >= 600:
+        if player_rect.bottom >= 600:
             game_state = "GAME_OVER"
-        if player.y <= 0:
+        if player_rect.top <= 0:
             game_state = "GAME_OVER"
 
         pygame.display.update()
