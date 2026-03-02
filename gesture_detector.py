@@ -2,6 +2,17 @@ class GestureDetector:
     def __init__(self):
         pass
 
+    def is_one_finger(self, landmarks):
+        if len(landmarks) != 21:
+            return False
+
+        index_open = landmarks[8][1] < landmarks[6][1]
+        middle_closed = landmarks[12][1] > landmarks[10][1]
+        ring_closed = landmarks[16][1] > landmarks[14][1]
+        pinky_closed = landmarks[20][1] > landmarks[18][1]
+
+        return index_open and middle_closed and ring_closed and pinky_closed
+
     def is_hand_open(self, landmarks):
         """Eğer 3 veya daha fazla parmak açık ise, el açık olarak kabul edilir."""
         if len(landmarks) != 21:

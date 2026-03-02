@@ -99,6 +99,16 @@ class Player:
 
     def get_rect(self):
         return pygame.Rect(self.x, int(self.y), self.width, self.height)    
+
+    def draw(self, screen):
+        screen.blit(self.image, (self.x, int(self.y)))
+    
+    def idle(self):
+        self.frame_index += self.animation_speed
+        if self.frame_index >= len(self.fly_frames):
+            self.frame_index = 0
+        self.image = self.fly_frames[int(self.frame_index)]
+
 class Pipe:
     def __init__(self, x):
         self.x = x

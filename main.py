@@ -1,5 +1,6 @@
 import pygame
 import cv2
+import math
 from game_logic import Player, Pipe
 from hand_tracker import HandTracker
 from gesture_detector import GestureDetector
@@ -8,6 +9,51 @@ from pathlib import Path
 pygame.init()
 screen = pygame.display.set_mode((800, 600))
 clock = pygame.time.Clock()
+
+
+def draw_text_with_shadow(
+    surface,
+    text,
+    font,
+    color,
+    position,
+    shadow_color=(8, 12, 18),
+    shadow_offset=(2, 2),
+    center=False,
+):
+    shadow_surface = font.render(text, True, shadow_color)
+    text_surface = font.render(text, True, color)
+
+    if center:
+        shadow_rect = shadow_surface.get_rect(
+            center=(position[0] + shadow_offset[0], position[1] + shadow_offset[1])
+        )
+        text_rect = text_surface.get_rect(center=position)
+    else:
+        shadow_rect = shadow_surface.get_rect(
+            topleft=(position[0] + shadow_offset[0], position[1] + shadow_offset[1])
+        )
+        text_rect = text_surface.get_rect(topleft=position)
+
+    surface.blit(shadow_surface, shadow_rect)
+    surface.blit(text_surface, text_rect)
+
+
+def draw_score_panel(surface, font, score, best_score):
+    draw_text_with_shadow(
+        surface,
+        f"Skor: {score}",
+        font,
+        (244, 248, 252),
+        (14, 12),
+    )
+    draw_text_with_shadow(
+        surface,
+        f"En iyi: {best_score}",
+        font,
+        (190, 228, 246),
+        (14, 40),
+    )
 
 assets_dir = Path(__file__).resolve().parent / "Assets" / "background"
 background_path = None
@@ -25,22 +71,28 @@ else:
     background_image.fill((30, 40, 60))
 
 game_state = "START"
-font = pygame.font.SysFont(None, 70)
-small_font = pygame.font.SysFont(None, 40)
+font = pygame.font.SysFont("Segoe UI", 72, bold=True)
+title_font = pygame.font.SysFont("Segoe UI", 70, bold=True)
+subtitle_font = pygame.font.SysFont("Segoe UI", 44, bold=True)
+small_font = pygame.font.SysFont("Segoe UI", 36)
+tiny_font = pygame.font.SysFont("Segoe UI", 26)
 
 player = Player()
 pipes = [Pipe(800)]
 spawn_timer = 0
 score = 0
 death_timer = 0
+best_score = 0
 
 cap = cv2.VideoCapture(0)
 tracker = HandTracker()
 detector = GestureDetector()
 
 running = True
-started = False
-prev_hand_open = False
+prev_jump_detected = False
+prev_start_detected = False
+app_start_time = pygame.time.get_ticks()
+start_ready_delay_ms = 1500
 
 while running:
     success, frame = cap.read()
@@ -51,6 +103,7 @@ while running:
     frame, landmarks = tracker.process_frame(frame)
 
     jump_detected = detector.is_hand_open(landmarks)
+    one_finger_detected = detector.is_one_finger(landmarks)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -58,19 +111,93 @@ while running:
 
     # START EKRANI
     if game_state == "START":
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_rgb = cv2.resize(frame_rgb, (800, 600))
-        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-        screen.blit(frame_surface, (0, 0))
-        
-        title = font.render("Görsel Kontrollü Zıplama Oyunu", True, (255, 255, 255))
-        info = small_font.render("Avuç aç: Zıpla | Avucunu açarak başla", True, (200, 200, 200))
+        now = pygame.time.get_ticks()
+        is_preparing = now - app_start_time < start_ready_delay_ms
 
-        screen.blit(title, (200, 200))
-        screen.blit(info, (220, 300))
+        screen.blit(background_image, (0, 0))
+
+        overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
+        overlay.fill((8, 12, 18, 80))
+        screen.blit(overlay, (0, 0))
+
+        draw_text_with_shadow(
+            screen,
+            "Vision Jump",
+            title_font,
+            (240, 248, 255),
+            (400, 60),
+            center=True,
+        )
+
+        if is_preparing:
+            dot_count = (now // 300) % 3 + 1
+            draw_text_with_shadow(
+                screen,
+                f"Kamera hazırlanıyor{'.' * dot_count}",
+                tiny_font,
+                (220, 235, 245),
+                (400, 112),
+                center=True,
+            )
+        else:
+            pulse = (now // 350) % 2 == 0
+            cta_color = (235, 248, 255) if pulse else (170, 215, 238)
+            draw_text_with_shadow(
+                screen,
+                "Bir parmak çıkar ve başla",
+                subtitle_font,
+                cta_color,
+                (400, 112),
+                center=True,
+            )
+
+        status_text = "Algılandı" if one_finger_detected else "Jest bekleniyor"
+        status_color = (75, 240, 160) if one_finger_detected else (255, 190, 120)
+        draw_text_with_shadow(
+            screen,
+            status_text,
+            tiny_font,
+            status_color,
+            (400, 152),
+            center=True,
+        )
+
+        draw_text_with_shadow(
+            screen,
+            f"En iyi skor: {best_score}",
+            tiny_font,
+            (215, 230, 242),
+            (22, 20),
+        )
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.resize(frame_rgb, (170, 120))
+        camera_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        screen.blit(camera_surface, (610, 460))
+        pygame.draw.rect(screen, (220, 235, 245), (610, 460, 170, 120), 2)
         
-        if jump_detected:
+        if not is_preparing and one_finger_detected and not prev_start_detected:
             game_state = "PLAYING"
+            prev_jump_detected = jump_detected
+
+        prev_start_detected = one_finger_detected
+
+        player.y = 265 + int(12 * math.sin(now / 220))
+        player.velocity = 0
+        player.idle()
+
+        bird_scale = 2.4
+        bird_image = pygame.transform.smoothscale(
+            player.image,
+            (
+                int(player.image.get_width() * bird_scale),
+                int(player.image.get_height() * bird_scale),
+            ),
+        )
+        bird_angle = int(6 * math.sin(now / 260))
+        bird_rotated = pygame.transform.rotate(bird_image, bird_angle)
+        bird_rect = bird_rotated.get_rect(center=(400, 320 + int(10 * math.sin(now / 240))))
+        screen.blit(bird_rotated, bird_rect)
         
         pygame.display.update()
         clock.tick(60)
@@ -79,17 +206,11 @@ while running:
     if game_state == "PLAYING":
         screen.blit(background_image, (0, 0))
 
-        score_bg = pygame.Surface((140, 40))
-        score_bg.set_alpha(150)
-        score_bg.fill((0, 0, 0))
-        screen.blit(score_bg, (5, 5))
+        draw_score_panel(screen, tiny_font, score, best_score)
 
-        score_text = small_font.render(f"Skor: {score}", True, (255, 255, 255))
-        screen.blit(score_text, (15, 10))   
-
-        if jump_detected and not prev_hand_open:    
+        if jump_detected and not prev_jump_detected:
             player.jump()
-        prev_hand_open = jump_detected
+        prev_jump_detected = jump_detected
 
         player.update()
 
@@ -125,6 +246,8 @@ while running:
             if not pipe.passed and pipe.x + pipe.width < player.x:
                 pipe.passed = True
                 score += 1
+                if score > best_score:
+                    best_score = score
 
         # Kamera görüntüsünü küçültme ve sağ alt köşeye yerleştirme
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -151,13 +274,7 @@ while running:
     if game_state == "DYING":
         screen.blit(background_image, (0, 0))
 
-        score_bg = pygame.Surface((140, 40))
-        score_bg.set_alpha(150)
-        score_bg.fill((0, 0, 0))
-        screen.blit(score_bg, (5, 5))
-
-        score_text = small_font.render(f"Skor: {score}", True, (255, 255, 255))
-        screen.blit(score_text, (15, 10))
+        draw_score_panel(screen, tiny_font, score, best_score)
 
         for pipe in pipes:
             pipe.draw(screen, 600)
@@ -189,28 +306,75 @@ while running:
         continue
     # GAME OVER EKRANI
     if game_state == "GAME_OVER":
+        screen.blit(background_image, (0, 0))
+
+        overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
+        overlay.fill((8, 12, 18, 90))
+        screen.blit(overlay, (0, 0))
+
+        pulse = (pygame.time.get_ticks() // 350) % 2 == 0
+        restart_color = (240, 248, 255) if pulse else (170, 215, 238)
+
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_rgb = cv2.resize(frame_rgb, (800, 600))           
-        frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-        screen.blit(frame_surface, (0, 0))
-        
-        game_over_text = font.render("Oyun Bitti!", True, (255, 0, 0))
-        restart_text = small_font.render("Avuç açarak tekrar başla", True, (255, 255, 255))
-        score_text = small_font.render(f"Skor: {score}", True, (255, 255, 255))
+        frame_rgb = cv2.resize(frame_rgb, (170, 120))
+        camera_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        screen.blit(camera_surface, (610, 460))
+        pygame.draw.rect(screen, (220, 235, 245), (610, 460, 170, 120), 2)
 
-        screen.blit(game_over_text, (220, 220))
-        screen.blit(score_text, (350, 300))
-        screen.blit(restart_text, (150, 320))
+        draw_text_with_shadow(
+            screen,
+            "Oyun Bitti!",
+            font,
+            (255, 178, 77),
+            (400, 90),
+            center=True,
+        )
+        draw_text_with_shadow(
+            screen,
+            f"Skor: {score}",
+            small_font,
+            (245, 248, 252),
+            (400, 205),
+            center=True,
+        )
+        draw_text_with_shadow(
+            screen,
+            f"En iyi: {best_score}",
+            small_font,
+            (245, 248, 252),
+            (400, 245),
+            center=True,
+        )
 
-        if jump_detected:
+        status_text = "Algılandı" if one_finger_detected else "Jest bekleniyor"
+        status_color = (75, 240, 160) if one_finger_detected else (255, 190, 120)
+        draw_text_with_shadow(
+            screen,
+            status_text,
+            tiny_font,
+            status_color,
+            (400, 305),
+            center=True,
+        )
+        draw_text_with_shadow(
+            screen,
+            "Bir parmak çıkararak tekrar başla",
+            small_font,
+            restart_color,
+            (400, 365),
+            center=True,
+        )
+
+        if one_finger_detected and not prev_start_detected:
             player = Player()
             pipes = [Pipe(800)]
             spawn_timer = 0
             score = 0
             death_timer = 0
             game_state = "PLAYING"
+            prev_jump_detected = jump_detected
         
-        prev_hand_open = jump_detected
+        prev_start_detected = one_finger_detected
         
         pygame.display.update()
         clock.tick(60)
