@@ -3,6 +3,10 @@
 Gerçek zamanlı bilgisayarlı görü ile kontrol edilen, jest tabanlı bir 2D oyun projesi.
 Bu çalışma, kamera akışının işlenmesinden oyun fiziğine kadar uçtan uca bir gerçek zamanlı sistem geliştirerek Computer Vision ve Game Development disiplinlerini bir araya getirir.
 
+## 🎥 Demo
+
+![Demo GIF](demo.gif)
+
 ## Kullanılan Teknolojiler
 
 - **Python**
